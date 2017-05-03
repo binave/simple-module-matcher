@@ -16,7 +16,7 @@
 
 package org.binave.match;
 
-import org.binave.util.CharUtil;
+import org.binave.common.util.CharUtil;
 import org.junit.Test;
 
 import java.io.*;
@@ -44,12 +44,12 @@ public class BootstrapTest {
                 String pomPath = path.replace("target\\classes", "pom.xml"); // 获得 pom 路径
 
                 String pomText = CharUtil.readText(pomPath); // 获得 pom 正文
-                String tagText = CharUtil.getLabelText(pomText, "Module-Tag"); // 获得 Unit-Tag 标签内容
+                String tagText = getLabel(pomText, "Module-Tag"); // 获得 Unit-Tag 标签内容
 
                 if (tagText == null) continue; // 未配置 Unit-Tag
 
-                String nameText = CharUtil.getLabelText(pomText, "artifactId");
-                String levelText = CharUtil.getLabelText(pomText, "Module-Level");
+                String nameText = getLabel(pomText, "artifactId");
+                String levelText = getLabel(pomText, "Module-Level");
 
                 // 引用或实现类的全名
                 String[] tagTexts = tagText.replaceAll("[ \n]", "").split("[,;:]");
@@ -68,6 +68,11 @@ public class BootstrapTest {
         }
 
         return tagList;
+    }
+
+    private String getLabel(String text, String tag) {
+        List<String> labels = CharUtil.getLabelText(text, tag);
+        return labels.isEmpty() ? null : labels.get(0);
     }
 
     @Test

@@ -16,7 +16,8 @@
 
 package org.binave.match;
 
-import org.binave.util.TypeUtil;
+
+import org.binave.common.util.TypeUtil;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
@@ -95,7 +96,7 @@ public class ModuleAssembler {
                     boolean isSet = Set.class.isAssignableFrom(fieldType);
 
                     // 如果是集合（不支持自定义集合）
-                    fieldType = isSet ? TypeUtil.getGenericTypeByIndex(field, 0) : fieldType;
+                    fieldType = isSet ? (Class) TypeUtil.getGenericTypes(field)[0] : fieldType;
 
                     // 测试有没有内容
                     Set<Object> implSet = implObjectByInterface.get(fieldType);
@@ -371,7 +372,7 @@ public class ModuleAssembler {
 
         boolean find = false;
 
-        for (Class _interface : impl.getInterfaces()) {
+        for (Class _interface : TypeUtil.getInterfaces(impl)) {
             // 通过类名称进行匹配，此处需要落实到规范之中。
             if (impl.getSimpleName().contains(_interface.getSimpleName())) {
                 find = true;
@@ -392,7 +393,8 @@ public class ModuleAssembler {
         }
 
         // 没有符合规范的接口
-        if (!find) throw new RuntimeException("interface not found :" + fullClassName);
+        if (!find)
+            throw new RuntimeException("interface not found :" + fullClassName + ", interface:" + Arrays.toString(TypeUtil.getInterfaces(impl)));
     }
 
     private Map<String, Field> getFieldsMapCache(Class ownerClass) {

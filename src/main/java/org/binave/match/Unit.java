@@ -16,6 +16,8 @@
 
 package org.binave.match;
 
+import lombok.*;
+
 import java.lang.reflect.Method;
 
 /**
@@ -25,6 +27,11 @@ import java.lang.reflect.Method;
  * @author bin jin on 2017/4/13.
  * @since 1.8
  */
+@Getter
+@Setter
+@ToString
+@NoArgsConstructor
+@AllArgsConstructor
 public class Unit implements Comparable<Unit> {
 
     /**
@@ -52,46 +59,6 @@ public class Unit implements Comparable<Unit> {
      */
     private Method init;
 
-    public String getModuleName() {
-        return moduleName;
-    }
-
-    public void setModuleName(String moduleName) {
-        this.moduleName = moduleName;
-    }
-
-    public int getInitLevel() {
-        return initLevel;
-    }
-
-    public void setInitLevel(int initLevel) {
-        this.initLevel = initLevel;
-    }
-
-    public String getClassName() {
-        return className;
-    }
-
-    public void setClassName(String className) {
-        this.className = className;
-    }
-
-    public Class getImplClass() {
-        return implClass;
-    }
-
-    public void setImplClass(Class implClass) {
-        this.implClass = implClass;
-    }
-
-    public Method getInit() {
-        return init;
-    }
-
-    public void setInit(Method init) {
-        this.init = init;
-    }
-
     /**
      * 排序
      */
@@ -99,16 +66,5 @@ public class Unit implements Comparable<Unit> {
     public int compareTo(Unit o) {
         // 两者的顺序决定了 Collections.sort 方法输出的顺序
         return this.getInitLevel() - o.getInitLevel();
-    }
-
-    @Override
-    public String toString() {
-        return "Unit{" +
-                "moduleName='" + moduleName + '\'' +
-                ", initLevel=" + initLevel +
-                ", className='" + className + '\'' +
-                ", implClass=" + implClass +
-                ", init=" + init +
-                '}';
     }
 }

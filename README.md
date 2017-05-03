@@ -15,7 +15,8 @@ license text.
     * 将接口实现类实例注入调用属性（循环引用检测）
         * 支持注入实现类集合。（暂时只支持 Set 接口）
     * 保存调用关系，并在下次启动后读取
-    * 启动工程
+    * 按照优先级执行实现类的 init() 方法
+    * 执行启动方法
 
 * 注入支持情形
     * 对接口的静态引用
@@ -25,7 +26,15 @@ license text.
 
 注：引用在此处仅指作为类的属性。
 
-* 模块规范 (class 文件形式)
+* 模块规范 (jar 文件形式)
+    * MANIFEST.MF 中包含 Module-Tag:
+    * Module-Tag 的内容与与 pom 中的相同
+    * 可以使用 maven-jar-plugin 将 pom 配置转换为 MANIFEST.MF 配置。
+    * Module-Level 标记模块级别的实例化优先级，不标记的则放到最后加载。
+    * 将模块 jar 文件放入本工程 jar 所在 lib 文件夹下。
+    * 启动方法: org.binave.match.Bootstrap#main 位于 src/test/java 目录
+
+* 模块规范 (测试方式)
     * 支持且仅支持 maven 项目。
     * 将提供或使用接口的模块，以依赖的形式添加到本项目的 pom 中
     * 模块项目的 pom.xml 中含有 Module-Tag 标签
@@ -34,15 +43,7 @@ license text.
         * 类全名#方法名：启动方法，一个项目全局唯一。用于启动工程
     * 启动方法：org.binave.match.BootstrapTest#main 位于 src/test/java 目录
 
-* 模块规范 (jar 文件形式)
-    * MANIFEST.MF 中包含 Module-Tag:
-    * Module-Tag 的内容与与 pom 中的相同
-    * 可以使用 maven-jar-plugin 将 pom 配置转换为 MANIFEST.MF 配置。
-    * Module-Level 标记模块级别的实例化优先级，不标记的则放到最后加载。
-    * 将 jar 文件放入指定位置（待实现）
-    * 启动方法（待实现）
-
-在工程中使用示例注解代码。
+在工程中使用示例注解标记代码。
 然后将以 batch 本放入工作目录并执行，会将目标 Module-Tag 标签逐个写入剪贴板。
 
 #### 用于标注：接口实现、注入、启动方法 的注解。
@@ -95,7 +96,7 @@ Tab
 ```batch
 @echo off
 
-for /r %~dp0 /d %%a in (*src) do call :project "%%a"
+for /r %1 /d %%a in (*src) do call :project "%%a"
 
 goto :eof
 
@@ -123,6 +124,7 @@ goto :eof
         set \\\tmp=!\\\tmp:^>=!
         set \\\tmp=!\\\tmp:;= {!
         set \\\tmp=!\\\tmp:(= !
+        set \\\tmp=!\\\tmp:abstract=@!
         set \\\tmp=!\\\tmp:static=@!
         set \\\tmp=!\\\tmp:final=@!
         set \\\tmp=!\\\tmp:private=@!
@@ -219,4 +221,47 @@ e.g.
         </pluginManagement>
     </build>
 
+```
+
+#### 打包脚本
+
+```batch
+@echo off
+setlocal
+set c=0
+for %%a in (
+    %*
+) do set /a c+=1& call :main %%a
+
+echo %c% finish.
+endlocal
+call lib igui && pause>nul
+goto :eof
+
+:main
+    pushd %cd%
+        if not exist "%~1" goto end
+        cd /d %1
+        if not exist .\pom.xml goto end
+        call mvn clean && call mvn package assembly:single || goto end
+    popd
+
+    echo.
+
+    setlocal
+        set i=
+        set r=%random%%random%
+        for /r %1 %%a in (
+            *-with-dependencies.jar
+        ) do copy "%%~a" "%~dp0%r%" && set "i=%%~nxa"
+        rename "%~dp0%r%" "%i:-jar-with-dependencies=%"
+    endlocal
+
+    echo.
+    goto :eof
+
+:end
+    popd
+    echo.Error
+    goto :eof
 ```

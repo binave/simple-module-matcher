@@ -5,18 +5,9 @@
 !*/
 
 # Avoid ignoring some suffix
-!*.css
-!*.conf
 !*.gradle
-!*.gif
-!*.html
 !*.java
-!*.jpg
-!*.js
-!*.jsp
-!*.png
 !*.properties
-!*.sql
 !*.xml
 
 # Avoid ignoring default file
