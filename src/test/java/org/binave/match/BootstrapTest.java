@@ -33,6 +33,8 @@ import java.util.List;
  */
 public class BootstrapTest {
 
+    private static SimpleLog log = SimpleLogFactory.getLog(BootstrapTest.class);
+
     private List<Unit> getJars() {
 
         List<Unit> tagList = new ArrayList<>();
@@ -63,7 +65,7 @@ public class BootstrapTest {
                     tagList.add(unit); // 放入集合
                 }
 
-                System.out.println("load module: " + nameText + ", count: " + tagTexts.length + ", init level: " + (levelText == null ? 5 : levelText));
+                log.info("load module: {}, count: {}, init level: {}", nameText, tagTexts.length, levelText == null ? 5 : levelText);
             }
         }
 

@@ -9,6 +9,18 @@ Simple-unit-matcher is licensed under the Apache License, Version 2.0. See
 [LICENSE](https://github.com/binave/simple-unit-matcher/blob/master/LICENSE) for the full
 license text.
 
+![image](http://www.plantuml.com/plantuml/proxy?idx=0&src=https://raw.githubusercontent.com/binave/simple-module-matcher/master/README.uml)
+
+|标识|名称|作用
+|:---:|:---:|---
+|container|容器（节点）|管理 loader 生命周期。<br/>管理 loader 关系（注1）。<br/>隐藏通信实现。<br/>隐藏负载均衡。
+|loader|加载器|加载 module。<br/>隔离 module 间引用。
+|module|模块|普通 jar 包
+|regedit|注册|通过接口向 loader 注册自己的实现
+|service|服务|通过接口向 loader 获得服务实现
+
+![image](http://www.plantuml.com/plantuml/proxy?idx=1&src=https://raw.githubusercontent.com/binave/simple-module-matcher/master/README.uml)
+
 * 启动顺序
     * 扫描 jar 配置
     * 实例化接口实现类
@@ -185,40 +197,51 @@ e.g.
 
     <build>
         <finalName>${project.artifactId}-${maven.build.timestamp}</finalName>
-        <pluginManagement>
-            <plugins>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-surefire-plugin</artifactId>
-                    <version>2.20</version>
-                    <configuration>
-                        <skipTests>true</skipTests>
-                    </configuration>
-                </plugin>
-                <plugin>
-                    <!-- mvn package assembly:single -->
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-assembly-plugin</artifactId>
-                    <version>3.0.0</version>
-                    <configuration>
-                        <descriptorRefs>
-                            <descriptorRef>jar-with-dependencies</descriptorRef>
-                        </descriptorRefs>
-                        <archive>
-                            <manifestEntries>
-                                <Module-GroupId>${project.groupId}</Module-GroupId>
-                                <Module-ArtifactId>${project.artifactId}</Module-ArtifactId>
-                                <Module-Version>${project.version}</Module-Version>
-                                <Module-Level>0</Module-Level>
-                                <Module-Tag>
-                                    org.name.some.oneImpl,org.name.some.tow#oneif,org.name.some.other#startfunc()
-                                </Module-Tag>
-                            </manifestEntries>
-                        </archive>
-                    </configuration>
-                </plugin>
-            </plugins>
-        </pluginManagement>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.0.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <transformers>
+                                <transformer
+                                        implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <manifestEntries>
+                                        <Module-GroupId>${project.groupId}</Module-GroupId>
+                                        <Module-ArtifactId>${project.artifactId}</Module-ArtifactId>
+                                        <Module-Version>${project.version}</Module-Version>
+                                        <Module-Level>0</Module-Level>
+                                        <Module-Tag>
+                                            org.name.some.oneImpl,org.name.some.tow#oneif,org.name.some.other#startfunc()
+                                        </Module-Tag>
+                                    </manifestEntries>
+                                </transformer>
+                            </transformers>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>2.20</version>
+                <configuration>
+                    <skipTests>true</skipTests>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-release-plugin</artifactId>
+                <version>2.5.3</version>
+            </plugin>
+        </plugins>
     </build>
 
 ```

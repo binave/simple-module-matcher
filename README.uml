@@ -1,0 +1,78 @@
+
+@startuml
+title simple unit matcher
+skinparam {
+' handwritten true
+backgroundColor #ffffff
+activityBackgroundColor #ffffff
+activityBorderColor #888888
+ArrowColor #009900
+stateBorderColor #888888
+stateBackgroundColor #ffffff
+}
+
+state container_0 {
+state "loader" as l01
+l01 : * 01
+state "loader" as l02
+l02 : * 02
+state "loader" as l03
+l03 : * 03
+state "module" as m01
+m01 : * 01
+state "module" as m02
+m02 : * 02
+state "module" as m03
+m03 : * 03
+
+m01 -up[#0000ff]-> l01 : regedit
+l01 --> m01 : service
+
+m02 -up[#0000ff]-> l02 : regedit
+l03 --> m03 : service
+}
+
+state container_1 {
+state "loader" as l11
+l11 : * 01
+state "loader" as l12
+l12 : * 02
+state "module" as m11
+m11 : * 01
+state "module" as m12
+m12 : * 02
+
+m11 -up[#0000ff]-> l11 : regedit
+m12 -up[#0000ff]-> l12 : regedit
+}
+
+container_1 -left-> container_0 : rpc
+container_0 -left[#0000ff]-> container_1 : rpc
+
+@enduml
+
+
+@startuml
+title boot start
+skinparam {
+backgroundColor #ffffff
+activityBackgroundColor #ffffff
+activityBorderColor #888888
+ArrowColor #009900
+}
+
+:load module;
+-> instantiate;
+if (is collection) then
+-[#blue]-> true;
+:injection all;
+else
+-[#red]-> no;
+:injection first;
+endif
+-[#gray,bold]->
+:run init() function by order;
+-[#gray,bold]->
+:run start fun;
+
+@enduml

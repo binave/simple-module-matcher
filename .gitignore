@@ -8,6 +8,7 @@
 !*.gradle
 !*.java
 !*.properties
+!*.uml
 !*.xml
 
 # Avoid ignoring default file

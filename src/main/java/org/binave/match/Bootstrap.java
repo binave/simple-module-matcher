@@ -38,6 +38,8 @@ import java.util.jar.JarFile;
  */
 public class Bootstrap {
 
+    private static SimpleLog log = SimpleLogFactory.getLog(Bootstrap.class);
+
     public static void main(String[] args) {
 
         String loadPath;
@@ -49,7 +51,7 @@ public class Bootstrap {
 
             // 不是 jar 则跳出
             if (classPath.length != 1) {
-                System.err.println("not a jar");
+                log.error("not a jar");
                 System.exit(1);
             }
 
@@ -60,7 +62,7 @@ public class Bootstrap {
 
         File loadDir = new File(loadPath);
         if (!loadDir.isDirectory()) {
-            System.err.println("not found lib directory: " + loadDir);
+            log.error("not found lib directory: {}", loadDir);
             System.exit(1);
         }
 
@@ -99,7 +101,7 @@ public class Bootstrap {
                 tagList.add(unit); // 放入集合
             }
 
-            System.out.println("load module: " + nameText + ", count: " + tagTexts.length + ", init level: " + (levelText == null ? 5 : levelText));
+            log.info("load module: {}, count: {}, init level: {}", nameText, tagTexts.length, levelText == null ? 5 : levelText);
 
         }
 

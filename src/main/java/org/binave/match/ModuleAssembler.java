@@ -16,7 +16,6 @@
 
 package org.binave.match;
 
-
 import org.binave.common.util.TypeUtil;
 
 import java.lang.reflect.Field;
@@ -34,6 +33,8 @@ import java.util.concurrent.*;
  */
 public class ModuleAssembler {
 
+    private static SimpleLog log = SimpleLogFactory.getLog(ModuleAssembler.class);
+
     private ClassLoader loader;
 
     ModuleAssembler(ClassLoader loader) {
@@ -47,16 +48,16 @@ public class ModuleAssembler {
     // 如果读取到存档，先初始化此属性
 
     // <接口类，接口实现类实例> 主接口实现缓存
-    private Map<Class, Set<Object>> implObjectByInterface = new HashMap<>();
+    private Map<Class, Set<Object>> implObjectByInterface = new ConcurrentHashMap<>();
 
     // <类，实例> 属性对应的类：除了主接口实现类以外，仅允许成为其他类的属性的类，存在此处。
-    private Map<Class, Object> objectByClass = new HashMap<>();
+    private Map<Class, Object> objectByClass = new ConcurrentHashMap<>();
 
     // <属性所在类，属性名集合> 保存需要进行赋值的属性
-    private Map<Class, Set<String>> fieldSetByOwnerClass = new HashMap<>();
+    private Map<Class, Set<String>> fieldSetByOwnerClass = new ConcurrentHashMap<>();
 
     // <属性所在类，<属性名，属性>> 扫描过属性的类
-    private Map<Class, Map<String, Field>> fieldNameCacheByOwnerClass = new HashMap<>();
+    private Map<Class, Map<String, Field>> fieldNameCacheByOwnerClass = new ConcurrentHashMap<>();
 
     // 开启方法
     private Method startMethod;
@@ -66,6 +67,8 @@ public class ModuleAssembler {
 
     /**
      * 装配运行
+     *
+     * 需要在 {@link #sorting} 方法执行之后执行
      */
     void docking() {
         if (startMethod == null)
@@ -95,7 +98,7 @@ public class ModuleAssembler {
                     // 判断是否是集合类的 todo Collection
                     boolean isSet = Set.class.isAssignableFrom(fieldType);
 
-                    // 如果是集合（不支持自定义集合）
+                    // 如果是集合（不支持自定义集合），去取得泛型类型
                     fieldType = isSet ? (Class) TypeUtil.getGenericTypes(field)[0] : fieldType;
 
                     // 测试有没有内容
@@ -119,7 +122,10 @@ public class ModuleAssembler {
                     }
 
                     // 被引用的属性，是其他主接口实现类实例
-                    field.set(obj, isSet ? implSet : implSet.iterator().next());
+                    field.set(obj, isSet ?
+                            new HashSet<>(implSet) : // 去掉锁
+                            implSet.iterator().next()
+                    );
                     ++fieldInitCount;
                 }
             }
@@ -135,6 +141,8 @@ public class ModuleAssembler {
         // 根据初始化级别排序
         Collections.sort(this.units);
 
+        log.warn("[--- all module will run init function by order ---]");
+
         // 按照 level 执行 init 方法
         for (Unit unit : units) {
             Method method = unit.getInit();
@@ -142,11 +150,13 @@ public class ModuleAssembler {
                 Object obj = objectByClass.get(unit.getImplClass());
                 if (obj == null) throw new RuntimeException("obj not found: " +
                         unit.getClassName() + "#" + method.getName());
+                log.debug("[docking] will init: {}#{}", unit.getClassName(), method.getName());
                 try {
                     method.invoke(obj); // init
                 } catch (IllegalAccessException | InvocationTargetException e) {
                     unpackRuntimeException(e);
                 }
+                log.debug("[docking] init {} complete.", unit.getClassName());
             }
         }
 
@@ -155,6 +165,7 @@ public class ModuleAssembler {
 
         // 启动方法
         try {
+            log.warn("[=== all module init complete. ===]");
             startMethod.invoke(startObj);
         } catch (IllegalAccessException | InvocationTargetException e) {
             unpackRuntimeException(e);
@@ -174,7 +185,6 @@ public class ModuleAssembler {
 
     private Object getMainInterfaceFieldObject(Class type) {
         // 拿到缓存的属性所在类（已经是引用类的二级所在类）
-
         for (Class c : fieldNameCacheByOwnerClass.keySet()) {
             for (Field f : fieldNameCacheByOwnerClass.get(c).values()) {
                 // 搜索，现存的类当中的属性匹配问题
@@ -196,7 +206,11 @@ public class ModuleAssembler {
         return null;
     }
 
-    // 读取配置，分拣
+    /**
+     * 读取配置，分拣
+     *
+     * 需要在 {@link #docking} 之前执行
+     */
     void sorting(List<Unit> units) {
 
         if (units == null || units.isEmpty())
@@ -204,28 +218,27 @@ public class ModuleAssembler {
 
         // 线程池
         ExecutorService executor = Executors.newCachedThreadPool();
-
-        List<InitImpl> impls = new ArrayList<>();
-        for (Unit unit : units) {
-            impls.add(new InitImpl(unit));
-        }
+        List<InitImpl> implList = new ArrayList<>();
+        for (Unit unit : units) implList.add(new InitImpl(unit));
 
         String methodName = null;
         Class methodOwnerClass = null;
-
         List<Future<MethodUnit>> futureList;
 
         try {
             // 添加并执行
-            futureList = executor.invokeAll(impls);
+            futureList = executor.invokeAll(implList);
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
 
         // 等待全部线程完成
         executor.shutdown();
+        log.debug("[sorting] executor complete.");
 
+        int i = 0;
         for (Future<MethodUnit> future : futureList) {
+            ++i;
             MethodUnit unit;
             try {
                 unit = future.get();
@@ -233,42 +246,54 @@ public class ModuleAssembler {
                 throw new RuntimeException(e);
             }
             if (unit != null) {
-                if (methodName != null)
-                    throw new RuntimeException("start method too much: " +
-                            methodOwnerClass + "#" + methodName + "()");
+                if (methodName != null) throw new RuntimeException("start method too much: " +
+                        methodOwnerClass + "#" + methodName + "()");
+
                 methodName = unit.getMethodName();
                 methodOwnerClass = unit.getMethodOwnerClass();
             }
         }
 
-        // 启动方法
+        log.info("[sorting] complete {} count", i);
+
+        // 启动方法 todo 之后会支持多个方法
         if (methodName != null) {
+
+            log.debug("[sorting] start method: {}", methodName);
+
             if (startMethod == null) {
-                // 尝试当作方法获取
+                log.debug("[sorting] first start func {}", methodName);
+
+                // 使用前缀匹配的方式，尝试当作方法获取
                 List<Method> methods = TypeUtil.prefixPublicMethods(methodOwnerClass, methodName).get(methodName);
 
-                if (methods == null)
-                    throw new IllegalArgumentException("method " + methodName + "not found in " + methodOwnerClass.getName());
+                if (methods == null) {
+                    throw new IllegalArgumentException(
+                            log.error("method {} not found in {}", methodName, methodOwnerClass.getName()));
+                }
 
-                startMethod = methods.get(0);
+                log.debug("[sorting] get method count={}", methods.size());
+                startMethod = methods.get(0); // 拿到第一个
 
                 if (!objectByClass.containsKey(methodOwnerClass)) {
-                    // 如果不是实现的接口类
-                    Object obj = getInstance(methodOwnerClass);
-                    objectByClass.put(methodOwnerClass, obj);
+                    log.warn("[sorting] not impl func");
+                    // 如果不是实现的接口类，使用反射调用无参构造
+                    objectByClass.put(methodOwnerClass, getInstance(methodOwnerClass));
+                    /* {@link ConcurrentMap#computeIfAbsent } 嵌套会导致死锁 */
+                    log.debug("[sorting] compute if absent");
                 }
                 // 直接缓存
                 startClass = methodOwnerClass;
 //                removeFromList(fieldSetByOwnerClass, ownerClass, fieldName);
-            } else
-                throw new RuntimeException("Start method not single: " + methodOwnerClass.getName() + "." + methodName);
+            } else throw new RuntimeException("Start method not single: " +
+                    methodOwnerClass.getName() + "." + methodName);
         }
 
+        log.debug("[sorting] will init field owner class");
         // 获得等待处理的类迭代器
-        for (Class ownerClass : fieldSetByOwnerClass.keySet()) {
-            getFieldsMapCache(ownerClass);
-        }
+        for (Class ownerClass : fieldSetByOwnerClass.keySet()) getFieldsMapCache(ownerClass);
 
+        log.info("[sorting] complete.");
         this.units.addAll(units);
     }
 
@@ -307,52 +332,43 @@ public class ModuleAssembler {
 
         @Override
         public MethodUnit call() throws Exception {
-
             String fullName = unit.getClassName();
-
             MethodUnit mUnit = null;
+            int index = fullName.indexOf("#");
 
-            if (!fullName.contains("#")) {
+            if (index > 0) {
+                log.debug("[call] field or method {}", fullName);
+                // 初步将接口实现与需要引用的方法分离，缓存 属性路径，todo 会添加一些其他处理
 
-                // 处理主接口实现
-                initMainInterfaceImpl(unit);
-            } else {
-
-                // 缓存 属性路径，todo 会添加一些其他处理
-                // 初步将接口实现与需要引用的方法分离
-
-                int index = fullName.indexOf("#");
                 Class ownerClass = getClassFromCache(fullName.substring(0, index)); // 属性所属类
                 String fieldName = fullName.substring(index + 1); // 属性名称
 
-                if (fieldName.contains("(")) {
+                index = fieldName.indexOf("(");
+                if (index > 0) {
                     // 启动方法
-                    mUnit = new MethodUnit(
-                            fieldName.substring(0, fieldName.indexOf("(")),
-                            ownerClass
-                    );
+                    mUnit = new MethodUnit(fieldName.substring(0, index), ownerClass);
+                    log.debug("[call] add start method: {}#{}()", mUnit.getMethodOwnerClass(), mUnit.getMethodName());
                 } else {
+                    log.debug("[call] will add #{} from {}", fieldName, ownerClass);
+                    // 根据赋值属性所在类名称，进行缓存。如果没有，则 new 一个并返回
 
-                    // 根据赋值属性所在类名称，进行缓存
-                    Set<String> fieldSet = fieldSetByOwnerClass.get(ownerClass);
-
-                    if (fieldSet == null) {
-                        fieldSet = new HashSet<>();
-                        fieldSetByOwnerClass.put(ownerClass, fieldSet);
-                    }
-
+                    Set<String> fieldSet = fieldSetByOwnerClass.
+                            computeIfAbsent(ownerClass, k -> Collections.newSetFromMap(new ConcurrentHashMap<>()));
                     fieldSet.add(fieldName);
+                    log.debug("[call] add {}", fieldName);
                 }
-            }
+
+            } else initMainInterfaceImpl(unit); // 处理主接口实现
             return mUnit;
         }
     }
 
     /**
      * 初始化实现类实例，并缓存
+     *
+     * 多线程并发
      */
     private void initMainInterfaceImpl(Unit unit) {
-
         String fullClassName = unit.getClassName();
 
         if (!fullClassName.endsWith("Impl"))
@@ -363,11 +379,14 @@ public class ModuleAssembler {
 
         // 放入对象
         unit.setImplClass(impl);
+        log.debug("[initMainInterfaceImpl] get class by name {}", impl.getName());
 
         try {
             // 设置无参 init 方法（如果有）
             unit.setInit(impl.getMethod("init"));
+            log.debug("[initMainInterfaceImpl] {} have init method", impl.getName());
         } catch (NoSuchMethodException ignored) {
+            log.warn("[initMainInterfaceImpl] {} net have init method", impl.getName());
         }
 
         boolean find = false;
@@ -375,17 +394,13 @@ public class ModuleAssembler {
         for (Class _interface : TypeUtil.getInterfaces(impl)) {
             // 通过类名称进行匹配，此处需要落实到规范之中。
             if (impl.getSimpleName().contains(_interface.getSimpleName())) {
+                log.debug("[initMainInterfaceImpl] '{}' add in interface: '{}'", impl.getName(), _interface.getName());
                 find = true;
                 Object obj = getInstance(impl);
-                synchronized (_interface) {
-                    // 获得接口实现对象，此处仅为单例对象
-                    Set<Object> implSet = implObjectByInterface.get(_interface);
-                    if (implSet == null) {
-                        implSet = new HashSet<>();
-                        implObjectByInterface.put(_interface, implSet);
-                    }
-                    implSet.add(obj);
-                }
+                // 获得接口实现对象，此处仅为单例对象。如果没有，就 new 一个并返回
+                Set<Object> implSet = implObjectByInterface.
+                        computeIfAbsent(_interface, k -> Collections.newSetFromMap(new ConcurrentHashMap<>()));
+                implSet.add(obj);
                 // 缓存实现类全部属性
                 getFieldsMapCache(impl);
                 // 将类全名放入 set
@@ -394,68 +409,47 @@ public class ModuleAssembler {
 
         // 没有符合规范的接口
         if (!find)
-            throw new RuntimeException("interface not found :" + fullClassName + ", interface:" + Arrays.toString(TypeUtil.getInterfaces(impl)));
+            throw new RuntimeException("interface not found :" + fullClassName + ", interface:"
+                    + Arrays.toString(TypeUtil.getInterfaces(impl)));
+        log.debug("[initMainInterfaceImpl] instance '{}' complete.", unit.getClassName());
     }
 
-    private Map<String, Field> getFieldsMapCache(Class ownerClass) {
-        Map<String, Field> fieldMap = fieldNameCacheByOwnerClass.get(ownerClass);
-        if (fieldMap == null) {
-            // 获得类的全量属性
-            fieldMap = TypeUtil.getFieldMap(ownerClass);
-            fieldNameCacheByOwnerClass.put(ownerClass, fieldMap);
-        }
-        return fieldMap;
+    private void getFieldsMapCache(Class ownerClass) {
+        // 获得类的全量属性。值不存在时，进行缓存
+        fieldNameCacheByOwnerClass.computeIfAbsent(ownerClass, TypeUtil::getFieldMap);
     }
 
     // <类全名，类>
-    private Map<String, Class> classCache = new HashMap<>();
+    private Map<String, Class> classCache = new ConcurrentHashMap<>();
 
     private Class getClassFromCache(String classFullName) {
-        Class type = classCache.get(classFullName);
-        if (type == null) {
-            try {
-                type = getClass(classFullName);
-                classCache.put(classFullName, type);
-            } catch (ClassNotFoundException e) {
-                throw new RuntimeException(e);
-            }
-        }
-        return type;
+        // 如果 key 不存在则放入
+        return classCache.computeIfAbsent(classFullName, this::getClass);
     }
 
-
-    private Class getClass(String fullClassName) throws ClassNotFoundException {
-
-        if (fullClassName.contains("/")) throw new RuntimeException("classname format error: " + fullClassName);
-
+    private Class getClass(String fullClassName) {
+        if (fullClassName.contains("/"))
+            throw new RuntimeException("classname format error: " + fullClassName);
         // like: org.apache.json.Clear
-        return loader.loadClass(fullClassName);
+        try {
+            return loader.loadClass(fullClassName);
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException(e);
+        }
     }
-
-//    private <K, O, L extends Collection<O>> void addInList(Map<K, L> map, K key, O obj) {
-//        if (!map.containsKey(key)) {
-//            L set = (L) new HashSet();
-//            set.add(obj);
-//            map.put(key, set);
-//        } else map.getCaseInsensitive(key).add(obj);
-//    }
-
-//    private <K, O, L extends Collection<O>> void removeFromList(Map<K, L> map, K key, O obj) {
-//        map.getCaseInsensitive(key).remove(obj);
-//        if (map.getCaseInsensitive(key).isEmpty()) map.remove(key);
-//    }
 
     private Object getInstance(Class type) {
-        Object obj = objectByClass.get(type);
-        if (obj == null) {
-            try {
-                obj = type.newInstance();
-            } catch (InstantiationException | IllegalAccessException e) {
-                throw new RuntimeException(type.toString(), e);
-            }
-            objectByClass.put(type, obj);
+        // 如果 key 不存在则放入
+        return objectByClass.computeIfAbsent(type, this::newInstance);
+    }
+
+    private Object newInstance(Class type) {
+        try {
+            return type.newInstance();
+        } catch (InstantiationException | IllegalAccessException e) {
+            log.error("[newInstance]: {}", type.toString());
+            throw new RuntimeException(e);
         }
-        return obj;
     }
 
 }
