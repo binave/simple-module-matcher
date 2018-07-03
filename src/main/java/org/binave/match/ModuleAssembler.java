@@ -16,6 +16,7 @@
 
 package org.binave.match;
 
+import org.binave.common.util.ExceptionUtil;
 import org.binave.common.util.TypeUtil;
 
 import java.lang.reflect.Field;
@@ -154,7 +155,7 @@ public class ModuleAssembler {
                 try {
                     method.invoke(obj); // init
                 } catch (IllegalAccessException | InvocationTargetException e) {
-                    unpackRuntimeException(e);
+                    throw ExceptionUtil.unpackRuntimeException(e);
                 }
                 log.debug("[docking] init {} complete.", unit.getClassName());
             }
@@ -168,19 +169,8 @@ public class ModuleAssembler {
             log.warn("[=== all module init complete. ===]");
             startMethod.invoke(startObj);
         } catch (IllegalAccessException | InvocationTargetException e) {
-            unpackRuntimeException(e);
+            throw ExceptionUtil.unpackRuntimeException(e);
         }
-    }
-
-    // 异常脱壳
-    private void unpackRuntimeException(Throwable e) {
-        Throwable throwable = e.getCause();
-        if (throwable == null) throwable = e;
-        if (throwable instanceof RuntimeException) {
-            if (throwable.getCause() == null) {
-                throw (RuntimeException) throwable;
-            } else unpackRuntimeException(throwable);
-        } else throw new RuntimeException(throwable);
     }
 
     private Object getMainInterfaceFieldObject(Class type) {
